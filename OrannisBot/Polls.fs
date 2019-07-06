@@ -92,7 +92,9 @@ open System.Diagnostics
         for option in poll.Options do
             embedBuilder.AddField(option.Option, match (option.Voters |> List.fold (fun str el -> str + " " + el) "") with
                                                  | "" -> "No Votes"
-                                                 | str -> str) |> ignore
+                                                 | str -> 
+                                                    let voterCount = option.Voters.Length
+                                                    sprintf "%i Vote%s - %s" voterCount (if voterCount = 1 then "" else "s")  str) |> ignore
             
         embedBuilder.Build()
 
