@@ -7,6 +7,10 @@ open DSharpPlus.Entities
 open DSharpPlus.EventArgs
 open Polls
 open System.Threading.Tasks
+open System.Runtime.CompilerServices
+
+[<assembly: InternalsVisibleTo("OrannisBot.Tests")>]
+do()
 
 module OrannisBot =
 
@@ -20,12 +24,11 @@ module OrannisBot =
 
     let discord = new DiscordClient(discordConfig)
 
-    let alphabet =
+    let pollOptions =
         let emojiName n = sprintf ":regional_indicator_%c:" (char (int 'a' + n))
         List.init 26 (fun n ->
             let name = emojiName n
-            DiscordEmoji.FromName(discord, name))
-
+            DiscordEmoji.FromName(discord, name) |> DiscordBackedEmoji :> Emoji)
 
     type BotCommands() =
 
@@ -36,13 +39,13 @@ module OrannisBot =
             if spaceIndex < 0 || spaceIndex + 1 = originalMessage.Length then
                 ctx.Message.RespondAsync("Please provide a poll") |> Async.AwaitTask |> Async.Ignore |> ignore
             else
-                let poll = parseFromInput (originalMessage.Substring(spaceIndex + 1)) alphabet
-                let formattedEmbed = formatPollEmbed poll
+                let poll = parseFromInput (originalMessage.Substring(spaceIndex + 1))
+                let formattedEmbed = formatPollEmbed poll pollOptions
 
                 let! message = ctx.RespondAsync(embed = formattedEmbed) |> Async.AwaitTask
 
-                for i = 0 to poll.Options.Length - 1 do
-                    do! message.CreateReactionAsync(alphabet.Item i) |> Async.AwaitTask |> Async.Ignore
+                for emoji in pollOptions |> List.take poll.Options.Length do
+                    do! message.CreateReactionAsync (emoji.DiscordEmoji) |> Async.AwaitTask |> Async.Ignore
         }
 
         [<Command("poll"); Description("Creates a poll. Usage: $poll \"Title\" Option1 \"Option 2\"")>]
@@ -69,8 +72,8 @@ module OrannisBot =
         if event.User.IsBot || not event.Message.Author.IsCurrent || event.Message.Embeds.Count <> 1 then
             ()
         else
-            let! reparsedPoll = parseFromMessage event.Message alphabet
-            do! event.Message.ModifyAsync(embed = Optional<DiscordEmbed>((formatPollEmbed reparsedPoll))) |> Async.AwaitTask |> Async.Ignore
+            let! reparsedPoll = parseFromMessage event.Message pollOptions
+            do! event.Message.ModifyAsync(embed = Optional<DiscordEmbed>((formatPollEmbed reparsedPoll pollOptions))) |> Async.AwaitTask |> Async.Ignore
     }
 
     let messageReactionAddedAsync (event: MessageReactionAddEventArgs) : Task = messageReactionAdded event |> Async.StartAsTask :> Task
@@ -79,8 +82,8 @@ module OrannisBot =
         if event.User.IsBot || not event.Message.Author.IsCurrent || event.Message.Embeds.Count <> 1 then
             ()
         else
-            let! reparsedPoll = parseFromMessage event.Message alphabet
-            do! event.Message.ModifyAsync(embed = Optional<DiscordEmbed>((formatPollEmbed reparsedPoll))) |> Async.AwaitTask |> Async.Ignore
+            let! reparsedPoll = parseFromMessage event.Message pollOptions
+            do! event.Message.ModifyAsync(embed = Optional<DiscordEmbed>((formatPollEmbed reparsedPoll pollOptions))) |> Async.AwaitTask |> Async.Ignore
     }
 
     let messageReactionRemovedAsync (event: MessageReactionRemoveEventArgs): Task = messageReactionRemoved event |> Async.StartAsTask :> Task
