@@ -7,7 +7,7 @@
 
   <ItemGroup>
     <Compile Include="Config.fs" />
-    <Content Include="config.json">
+    <Content Include="test.json" Condition="Exists('config.json')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Compile Include="Polls.fs" />
