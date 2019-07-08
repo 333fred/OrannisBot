@@ -32,3 +32,5 @@ steps:
     arguments: '--output $(Build.ArtifactStagingDirectory)'
     publishWebProjects: false
     zipAfterPublish: true
+    
+- task: PublishBuildArtifacts@1
