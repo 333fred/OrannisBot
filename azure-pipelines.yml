@@ -25,3 +25,8 @@ steps:
 - task: DotNetCoreCLI@2
   inputs:
     command: test
+
+- task: DotNetCoreCLI@2
+  inputs:
+    command: publish
+    arguments: '--output $(Build.ArtifactStagingDirectory)'
