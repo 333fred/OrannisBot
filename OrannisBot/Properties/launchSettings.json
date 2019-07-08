@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "OrannisBot": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "DiscordToken": "NTk2NDY5NDk5Mzk0NTIzMTM2.XR5_sA.UWYzPY3zz15pfM64xDDYFcMs4tQ"
+      }
+    }
+  }
+}
