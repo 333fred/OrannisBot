@@ -30,3 +30,4 @@ steps:
   inputs:
     command: publish
     arguments: '--output $(Build.ArtifactStagingDirectory)'
+    publishWebProjects: false
