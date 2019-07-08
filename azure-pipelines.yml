@@ -31,3 +31,4 @@ steps:
     command: publish
     arguments: '--output $(Build.ArtifactStagingDirectory)'
     publishWebProjects: false
+    zipAfterPublish: true
