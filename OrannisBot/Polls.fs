@@ -1,6 +1,5 @@
 ﻿module Polls
 
-open System.Text
 open DSharpPlus.Entities
 open System.Diagnostics
 

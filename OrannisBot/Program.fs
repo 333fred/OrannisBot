@@ -14,12 +14,10 @@ do()
 
 module OrannisBot =
 
-    let botConfig = Config.readConfig()
-
     let discordConfig = DiscordConfiguration()
     discordConfig.set_AutoReconnect true
     discordConfig.set_LogLevel LogLevel.Debug
-    discordConfig.set_Token botConfig.DiscordToken
+    discordConfig.set_Token (Config.readToken())
     discordConfig.set_TokenType TokenType.Bot
 
     let discord = new DiscordClient(discordConfig)
