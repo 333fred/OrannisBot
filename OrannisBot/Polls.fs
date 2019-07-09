@@ -25,56 +25,46 @@ open System.Diagnostics
     }
 
     let rec map2Uneven mapper list1 list2 =
-        match list1 with
-        | head :: tail when list2 <> [] -> list.Cons((mapper head (List.head list2)), (map2Uneven mapper tail (List.tail list2)))
+        match list1, list2 with
+        | head1 :: tail1, head2 :: tail2 -> (mapper head1 head2) :: (map2Uneven mapper tail1 tail2)
         | _ -> []
 
     let zipUneven (list1 : 'a list) (list2 : 'b list) =
-        let list1Length : int = list1.Length
-        let list2Length : int = list2.Length
-        match (list1Length.CompareTo list2Length) with
-        | 0 -> List.zip list1 list2
-        | comp when comp > 0 -> List.zip (list1 |> List.take list2Length) list2
-        | _ -> List.zip list1 (list2 |> List.take list1Length)
+        map2Uneven (fun h1 h2 -> (h1, h2)) list1 list2
 
     let parseFromInput (message: string) =
         let escapeChar (chars : char list) : (string * char list) =
             match chars with
             | [] -> ("", [])
-            | head :: tail -> match head with
-                              | '\\' -> ("\\\\", tail)
-                              | _ -> (head.ToString(), tail)
+            | '\\' :: tail -> ("\\\\", tail)
+            | head :: tail -> (head.ToString(), tail)
 
         let rec doParse (chars: char list) : string List =
             match chars with
             | [] -> []
-            | head :: tail -> if head = ' ' then
-                                doParse tail
-                              else
-                                let (nextWord, remainder) = match head with
-                                                            | '"' -> parseQuote tail ""
-                                                            | _ -> parseWord chars ""
-                                list.Cons(nextWord, (doParse remainder))
+            | ' ' :: tail -> doParse tail
+            | '"' :: tail -> let (nextWord, remainder) = parseQuote tail ""
+                             nextWord :: (doParse remainder)
+            | _ -> let (nextWord, remainder) = parseWord chars ""
+                   nextWord :: (doParse remainder)
                          
 
         and parseWord (chars: char list) (current : string) : (string * char list) =
             match chars with
             | [] -> (current, chars)
-            | head :: tail -> match head with
-                              | '\\' -> let (escaped, remainder) = escapeChar tail
-                                        parseWord remainder (current + escaped)
-                              | '"' -> (current, chars)
-                              | ' ' -> (current, tail)
-                              | _ -> parseWord tail (current + head.ToString())
+            | '\\' :: tail -> let (escaped, remainder) = escapeChar tail
+                              parseWord remainder (current + escaped)
+            | '"' :: _ -> (current, chars)
+            | ' ' :: tail -> (current, tail)
+            | head :: tail -> parseWord tail (current + head.ToString())
 
         and parseQuote (chars : char list) (current : string) : (string * char list) =
             match chars with
             | [] -> (current, chars)
-            | head :: tail -> match head with
-                              | '\\' -> let (escaped, remainder) = escapeChar tail
-                                        parseQuote remainder (current + escaped)
-                              | '"' -> (current, tail)
-                              | _ -> parseQuote tail (current + head.ToString())
+            | '\\' :: tail -> let (escaped, remainder) = escapeChar tail
+                              parseQuote remainder (current + escaped)
+            | '"' :: tail -> (current, tail)
+            | head :: tail -> parseQuote tail (current + head.ToString())
 
         let parsedElements = doParse (message.ToCharArray() |> List.ofArray)
 
@@ -87,10 +77,10 @@ open System.Diagnostics
 
         let embed = message.Embeds.Item 0
         let options = embed.Fields |>
-                      Seq.map (fun field -> field.Name) |>
-                      Seq.map (fun name ->
-                                   let index = name.IndexOf(":")
-                                   name.Substring(index + 1).Trim()) |>
+                      Seq.map (fun field -> 
+                                    let name = field.Name
+                                    let index = name.IndexOf(":")
+                                    name.Substring(index + 1).Trim()) |>
                       List.ofSeq
         let relevantReactions = possibleReactions |> List.take options.Length
 
@@ -111,7 +101,7 @@ open System.Diagnostics
 
         for (option, emoji) in (zipUneven poll.Options emojis) do
             embedBuilder.AddField((sprintf "%s:\t%s" (emoji.ToString()) option.Option),
-                                  match (option.Voters |> List.fold (fun str el -> str + " " + el) "") with
+                                  match (String.concat " " option.Voters) with
                                   | "" -> "No Votes"
                                   | str -> let voterCount = option.Voters.Length
                                            sprintf "%i Vote%s - %s" voterCount (if voterCount = 1 then "" else "s")  str) |> ignore
