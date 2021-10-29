@@ -1,4 +1,4 @@
-﻿module Polls
+module Polls
 
 open Util
 open System.Threading.Tasks
@@ -32,43 +32,47 @@ open Remora.Discord.API.Abstractions.Gateway.Events
             match chars with
             | [] -> ("", [])
             | '\\' :: tail -> ("\\\\", tail)
-            | head :: tail -> (head.ToString(), tail)
+            | head :: tail -> (string head, tail)
 
         let rec doParse (chars: char list) : string list =
             match chars with
             | [] -> []
             | ' ' :: tail -> doParse tail
-            | '"' :: tail -> let (nextWord, remainder) = parseQuote tail ""
-                             nextWord :: (doParse remainder)
-            | _ -> let (nextWord, remainder) = parseWord chars ""
-                   nextWord :: (doParse remainder)
+            | '"' :: tail ->
+                let (nextWord, remainder) = parseQuote tail ""
+                nextWord :: (doParse remainder)
+            | _ ->
+                let (nextWord, remainder) = parseWord chars ""
+                nextWord :: (doParse remainder)
                          
 
         and parseWord (chars: char list) (current : string) : (string * char list) =
             match chars with
             | [] -> (current, chars)
-            | '\\' :: tail -> let (escaped, remainder) = escapeChar tail
-                              parseWord remainder (current + escaped)
+            | '\\' :: tail ->
+                let (escaped, remainder) = escapeChar tail
+                parseWord remainder (current + escaped)
             | '"' :: _ -> (current, chars)
             | ' ' :: tail -> (current, tail)
-            | head :: tail -> parseWord tail (current + head.ToString())
+            | head :: tail -> parseWord tail (current + string head)
 
         and parseQuote (chars : char list) (current : string) : (string * char list) =
             match chars with
             | [] -> (current, chars)
-            | '\\' :: tail -> let (escaped, remainder) = escapeChar tail
-                              parseQuote remainder (current + escaped)
+            | '\\' :: tail ->
+                let (escaped, remainder) = escapeChar tail
+                parseQuote remainder (current + escaped)
             | '"' :: tail -> (current, tail)
-            | head :: tail -> parseQuote tail (current + head.ToString())
+            | head :: tail -> parseQuote tail (current + string head)
 
-        let parsedElements = doParse (message.ToCharArray() |> List.ofArray)
+        let parsedElements =
+            message |> Seq.toList |> doParse
 
         match parsedElements with
         | [] -> {Title = ""; Options = []}
         | _ -> {Title = parsedElements.Head; Options = (parsedElements.Tail |> List.map(fun o -> {Option = o; Voters = []}))}
 
     type PollCommand(commandContext : ICommandContext, interactionService : IDiscordRestInteractionAPI) =
-
         interface IResponder<IInteractionCreate> with
             member self.RespondAsync(interactionCreate : IInteractionCreate, ct : CancellationToken) : Task<Result> =
                 task {
@@ -166,7 +170,7 @@ open Remora.Discord.API.Abstractions.Gateway.Events
                                     new ButtonComponent(
                                         ButtonComponentStyle.Primary,
                                         new Optional<string>(option.Option),
-                                        CustomID=new Optional<string>((5 * chunk + i).ToString()))))
+                                        CustomID=new Optional<string>(string (5 * chunk + i)))))
                             |> Seq.map (fun buttons -> new ActionRowComponent(buttons |> Seq.cast<IMessageComponent> |> Seq.toList) :> IMessageComponent)
                             |> Seq.toList
 
