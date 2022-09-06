@@ -1,36 +1,11 @@
 ﻿module Polls
 
-open DSharpPlus.Entities
-open System.Diagnostics
-
-    type Emoji =
-        abstract DiscordEmoji : DiscordEmoji with get
-
-    type DiscordBackedEmoji(emoji : DiscordEmoji) =
-        interface Emoji with
-            member this.DiscordEmoji = emoji
-        override this.ToString() =
-            emoji.ToString()
-
-    [<Struct>]
-    type PollOption = { 
-        Option: string
-        Voters: string list
-    }
-
-    [<Struct>]
-    type Poll = {
-        Title: string
-        Options: PollOption list
-    }
-
-    let rec map2Uneven mapper list1 list2 =
-        match list1, list2 with
-        | head1 :: tail1, head2 :: tail2 -> (mapper head1 head2) :: (map2Uneven mapper tail1 tail2)
-        | _ -> []
-
-    let zipUneven (list1 : 'a list) (list2 : 'b list) =
-        map2Uneven (fun h1 h2 -> (h1, h2)) list1 list2
+open System
+open System.Linq
+open System.Threading.Tasks
+open Discord
+open Discord.WebSocket
+open System.Text.RegularExpressions
 
     let parseFromInput (message: string) =
         let escapeChar (chars : char list) : (string * char list) =
@@ -39,7 +14,7 @@ open System.Diagnostics
             | '\\' :: tail -> ("\\\\", tail)
             | head :: tail -> (head.ToString(), tail)
 
-        let rec doParse (chars: char list) : string List =
+        let rec doParse (chars: char list) : string list =
             match chars with
             | [] -> []
             | ' ' :: tail -> doParse tail
@@ -66,45 +41,67 @@ open System.Diagnostics
             | '"' :: tail -> (current, tail)
             | head :: tail -> parseQuote tail (current + head.ToString())
 
-        let parsedElements = doParse (message.ToCharArray() |> List.ofArray)
+        doParse (message.ToCharArray() |> List.ofArray)
 
-        match parsedElements with
-        | [] -> {Title = ""; Options = []}
-        | _ -> {Title = parsedElements.Head; Options = (parsedElements.Tail |> List.map(fun o -> {Option = o; Voters = []}))}
+    let buildField (number: int) (option: string) : EmbedFieldBuilder =
+        let builder = new EmbedFieldBuilder()
+        builder.Name <- $"{number + 1} {option}"
+        builder.Value <- "No votes yet"
+        builder
+        
 
-    let parseFromMessage (message: DiscordMessage) (possibleReactions : Emoji list) : Async<Poll> = async {
-        Debug.Assert(message.Embeds.Count = 1)
+    let createPollResponder (discord : DiscordSocketClient) : Unit -> Task  =
+        let pollButtonCustomIdPrefix = "poll_button"
+        let commandResponder(command : SocketSlashCommand) : Task =
+            if command.Data.Name <> "poll" then
+                Task.CompletedTask
+            else
+                task {
+                    let embedBuilder = new EmbedBuilder()
+                    embedBuilder.Title <- command.Data.Options.First().Value :?> string
+                    let optionsString = command.Data.Options.ElementAt(1).Value :?> string
+                    let options = parseFromInput optionsString |> List.mapi buildField
 
-        let embed = message.Embeds.Item 0
-        let options = embed.Fields |>
-                      Seq.map (fun field -> 
-                                    let name = field.Name
-                                    let index = name.IndexOf(":")
-                                    name.Substring(index + 1).Trim()) |>
-                      List.ofSeq
-        let relevantReactions = possibleReactions |> List.take options.Length
+                    for option in options do
+                        embedBuilder.AddField option |> ignore
 
-        let getVotes (reaction : Emoji) = async {
-            let! votes = message.GetReactionsAsync(reaction.DiscordEmoji) |> Async.AwaitTask
-            return votes |> List.ofSeq |> List.filter (fun user -> not user.IsBot) |> List.map (fun user -> user.Mention)
-        }
+                    let componentBuilder = new ComponentBuilder()
 
-        let votes = relevantReactions |> List.map (fun reaction -> async { return! getVotes reaction })
+                    for i = 1 to options.Length do
+                        componentBuilder.WithButton(label = i.ToString(), customId = $"{pollButtonCustomIdPrefix}{i}") |> ignore
 
-        let pollOptions : PollOption list = (List.zip options votes) |> List.map (fun (option, vote) -> {Option = option; Voters = vote |> Async.RunSynchronously})
-        return {Title = embed.Title; Options = pollOptions}
-    }
+                    do! command.RespondAsync(embed = embedBuilder.Build(), components = componentBuilder.Build())
+                }
 
-    let formatPollEmbed (poll: Poll) (emojis : Emoji list): DiscordEmbed =
-        let embedBuilder = DiscordEmbedBuilder()
-        embedBuilder.WithTitle(poll.Title) |> ignore
+        let pollResponseRegex = new Regex($"""{pollButtonCustomIdPrefix}(\d+)""", RegexOptions.Compiled)
 
-        for (option, emoji) in (zipUneven poll.Options emojis) do
-            embedBuilder.AddField((sprintf "%s:\t%s" (emoji.ToString()) option.Option),
-                                  match (String.concat " " option.Voters) with
-                                  | "" -> "No Votes"
-                                  | str -> let voterCount = option.Voters.Length
-                                           sprintf "%i Vote%s - %s" voterCount (if voterCount = 1 then "" else "s")  str) |> ignore
-            
-        embedBuilder.Build()
+        let buttonResponder(messageComponent: SocketMessageComponent) : Task =
+            let customIdMatch = pollResponseRegex.Match(messageComponent.Data.CustomId)
+            if not customIdMatch.Success then
+                Task.CompletedTask
+            else
+                task {
+                    let pollOption = customIdMatch.Groups[1].Value |> Int32.Parse
+                    let optionEmbed = messageComponent.Message.Embeds.Single().ToEmbedBuilder()
+                    let votedOption = optionEmbed.Fields[pollOption - 1]
+                    let currentVotes = votedOption.Value :?> string
+                    if not (currentVotes.Contains messageComponent.User.Mention) then
+                        votedOption.Value <- if votedOption.Value = "No votes yet" then messageComponent.User.Mention else $"{currentVotes}, {messageComponent.User.Mention}"
 
+                        do! messageComponent.UpdateAsync(fun(context) -> context.Embed <- optionEmbed.Build())
+                    else
+                        do! messageComponent.RespondAsync($"You've already voted for option {pollOption}", ephemeral = true)
+                }
+
+        fun () ->
+            task {
+                let builder = new SlashCommandBuilder()
+                builder.WithName "poll" |> ignore
+                builder.WithDescription "Creates a poll" |> ignore
+                builder.AddOption("title", ApplicationCommandOptionType.String, "The title of the poll", isRequired = true, choices = Array.Empty()) |> ignore
+                builder.AddOption("options", ApplicationCommandOptionType.String, "The options for the poll. ", isRequired = true, choices = Array.Empty()) |> ignore
+                discord.add_SlashCommandExecuted commandResponder
+                discord.add_ButtonExecuted buttonResponder
+                let! result =  discord.CreateGlobalApplicationCommandAsync(builder.Build())
+                ()
+            }
