@@ -84,13 +84,19 @@ open System.Text.RegularExpressions
                     let pollOption = customIdMatch.Groups[1].Value |> Int32.Parse
                     let optionEmbed = messageComponent.Message.Embeds.Single().ToEmbedBuilder()
                     let votedOption = optionEmbed.Fields[pollOption - 1]
-                    let currentVotes = votedOption.Value :?> string
-                    if not (currentVotes.Contains messageComponent.User.Mention) then
-                        votedOption.Value <- if votedOption.Value = "No votes yet" then messageComponent.User.Mention else $"{currentVotes}, {messageComponent.User.Mention}"
+                    let currentVotesString = votedOption.Value :?> string
+                    let currentVotes = match currentVotesString with
+                                       | "No votes yet" -> []
+                                       | _ -> currentVotesString.Split(',', (StringSplitOptions.TrimEntries ||| StringSplitOptions.RemoveEmptyEntries)) |> List.ofArray
 
-                        do! messageComponent.UpdateAsync(fun(context) -> context.Embed <- optionEmbed.Build())
-                    else
-                        do! messageComponent.RespondAsync($"You've already voted for option {pollOption}", ephemeral = true)
+                    let finalVotes = if currentVotes.Contains messageComponent.User.Mention then
+                                        currentVotes |> List.filter (fun el -> el <> messageComponent.User.Mention)
+                                     else
+                                        currentVotes |> List.append [messageComponent.User.Mention]
+
+                    votedOption.Value <- if finalVotes.IsEmpty then "No votes yet" else (finalVotes |> String.concat ",")
+
+                    do! messageComponent.UpdateAsync(fun(context) -> context.Embed <- optionEmbed.Build())
                 }
 
         fun () ->
